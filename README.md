@@ -28,6 +28,8 @@ A newsletter (Markdown) inclui as seções:
 - **Possíveis demandas duplicadas** — por similaridade semântica (IA).
 - **Quem resolveu o quê** — ranking de resoluções.
 - **Destaques dos comentários** — decisões, handoffs e dependências relevantes.
+- **Demandas no Teams sem card** — pedidos/bugs mencionados em chats/canais que
+  ainda não viraram card no Planner (classificados por IA, deduplicados).
 - **Gargalos identificados** — áreas/sistemas com mais represamento.
 - **Visão para coordenação** — resumo executivo para liderança.
 - **O que precisa de decisão hoje** + **Recomendações priorizadas**.
@@ -74,13 +76,15 @@ daily-backlog-agent/
 ├── step4_metrics.py        # Teste isolado: calcula métricas
 ├── step5_newsletter.py     # Teste isolado: gera a newsletter (--ai opcional)
 ├── step6_comments.py       # Teste isolado: coleta comentários
+├── step7_collect_teams.py  # Teste isolado: coleta mensagens do Teams
 │
 ├── src/
 │   ├── auth.py             # Login MSAL (Device Code) + cache de token
 │   ├── graph_client.py     # Wrapper do Graph (paginação, throttling)
 │   ├── collectors/
 │   │   ├── planner.py      # Coleta planos/tasks/buckets/usuários
-│   │   └── comments.py     # Coleta e limpa comentários dos cards
+│   │   ├── comments.py     # Coleta e limpa comentários dos cards
+│   │   └── teams.py        # Coleta mensagens de canais/chats do Teams
 │   ├── normalize.py        # Modelo limpo (aging, faixas, vencidas, prioridade)
 │   ├── metrics.py          # Métricas determinísticas (sem IA)
 │   ├── ai_insights.py      # Camada de IA (claude headless)
@@ -119,6 +123,15 @@ daily-backlog-agent/
    | `User.ReadBasic.All` | Resolver o **nome** dos demais responsáveis |
    | `offline_access` | Refresh token (execução agendada silenciosa) |
 
+   **Para a Fase 2 (Teams)**, adicione também:
+
+   | Permissão | Para quê |
+   |---|---|
+   | `Team.ReadBasic.All` | Listar as equipes que você participa |
+   | `Channel.ReadBasic.All` | Listar os canais |
+   | `ChannelMessage.Read.All` | Ler mensagens dos canais (**exige admin consent**) |
+   | `Chat.Read` | Listar e ler seus chats |
+
 6. Clique em **"Conceder consentimento de administrador"** (ou peça a um admin).
 
 > ℹ️ **Por que auth delegada (Device Code)?** A API do Planner praticamente não
@@ -148,8 +161,9 @@ Edite o `.env`:
 ```
 TENANT_ID=<seu-tenant-id>
 CLIENT_ID=<seu-client-id>
-GRAPH_SCOPES=Tasks.Read Group.Read.All User.Read User.ReadBasic.All
+GRAPH_SCOPES=Tasks.Read Group.Read.All User.Read User.ReadBasic.All Team.ReadBasic.All Channel.ReadBasic.All ChannelMessage.Read.All Chat.Read
 MY_DISPLAY_NAME=Seu Nome Exato (como aparece no Planner)
+# TEAMS_WINDOW_DAYS=3   # (opcional) janela de dias varrida no Teams
 ```
 
 ### `context.md` (opcional, mas recomendado)
@@ -177,6 +191,7 @@ Variações:
 ```bash
 py run_all.py --no-ai     # só camada determinística (rápido, sem IA)
 py run_all.py --details   # coleta também descrição/checklist dos cards (mais lento)
+py run_all.py --no-teams  # pula a coleta/análise do Teams
 ```
 
 O relatório final fica em **`reports/daily_AAAA-MM-DD.md`** (abra no VS Code para
@@ -255,8 +270,8 @@ na versão determinística — nada quebra.
 - [x] **Fase 1.5** — Leitura dos comentários dos cards (bloqueios, dependências, evidência)
 - [x] **Fase 2.1** — Camada de IA (resumo, duplicatas semânticas, riscos, recomendações)
 - [x] **Fase 2.2/2.3** — Orquestrador único + agendamento diário
+- [x] **Fase 2 (Teams)** — captura demandas em chats/canais que não viraram card
 - [ ] **Memória operacional** — snapshots históricos: tendências de 90 dias, recorrências
-- [ ] **Fase 2 (Teams)** — capturar demandas em chats/canais que não viraram card
 - [ ] **Fase 3 (Distribuição)** — enviar a newsletter por e-mail / Teams / SharePoint
 
 ---

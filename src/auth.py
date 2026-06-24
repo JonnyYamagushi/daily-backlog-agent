@@ -27,7 +27,9 @@ load_dotenv()
 TENANT_ID = os.getenv("TENANT_ID")
 CLIENT_ID = os.getenv("CLIENT_ID")
 SCOPES = os.getenv(
-    "GRAPH_SCOPES", "Tasks.Read Group.Read.All User.Read User.ReadBasic.All"
+    "GRAPH_SCOPES",
+    "Tasks.Read Group.Read.All User.Read User.ReadBasic.All "
+    "Team.ReadBasic.All Channel.ReadBasic.All ChannelMessage.Read.All Chat.Read",
 ).split()
 
 AUTHORITY = f"https://login.microsoftonline.com/{TENANT_ID}"

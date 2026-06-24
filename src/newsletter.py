@@ -84,7 +84,8 @@ def _linha_demanda(d: dict, mostrar_atraso=False) -> str:
 # ---- Geracao da newsletter --------------------------------------------------
 
 def build_newsletter(metrics: dict, normalized: dict, changes: dict, my_name: str,
-                     insights: dict | None = None) -> str:
+                     insights: dict | None = None,
+                     teams_demands: dict | None = None) -> str:
     r = metrics["resumo"]
     now = datetime.now(timezone.utc).strftime("%d/%m/%Y")
     ia = insights or {}
@@ -175,6 +176,25 @@ def build_newsletter(metrics: dict, normalized: dict, changes: dict, my_name: st
         L.append("")
     else:
         L.append("_Todas as demandas abertas têm responsável._\n")
+
+    # ---------------- Demandas no Teams sem card -----------------
+    td = (teams_demands or {}).get("demandas_teams") if teams_demands else None
+    if td is not None:
+        novas_td = [d for d in td if (d.get("ja_rastreada") or "nao").lower() == "nao"]
+        L.append("## Demandas no Teams sem card 💬🤖\n")
+        if novas_td:
+            L.append(f"_{len(novas_td)} possível(is) demanda(s) mencionada(s) no Teams "
+                     f"que parecem **não ter card** no Planner:_\n")
+            for d in novas_td:
+                L.append(f"- **{d.get('assunto', '')}** _(conf. {d.get('confianca', '?')})_ — "
+                         f"pedido por {d.get('solicitante', '?')} em _{d.get('origem', '?')}_")
+                if d.get("evidencia"):
+                    L.append(f"  > {d['evidencia']}")
+                if d.get("acao_sugerida"):
+                    L.append(f"  _→ {d['acao_sugerida']}_")
+            L.append("")
+        else:
+            L.append("_Nenhuma demanda nova identificada nos chats/canais do período._\n")
 
     # ---------------- Vencidas -----------------
     L.append("## Demandas vencidas\n")

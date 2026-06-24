@@ -141,13 +141,38 @@ def _strip_fences(text: str) -> str:
     return t.strip()
 
 
-def generate_insights(metrics: dict, normalized: dict, comments: dict | None = None,
-                      timeout: int = 240) -> dict | None:
+def _call_claude(prompt: str, timeout: int = 240) -> dict | None:
+    """Chama o Claude Code headless e devolve o JSON parseado (ou None)."""
     claude = shutil.which("claude")
     if not claude:
         print("[IA] CLI 'claude' nao encontrada no PATH — pulando camada de IA.")
         return None
+    try:
+        proc = subprocess.run(
+            [claude, "-p", "--output-format", "json"],
+            input=prompt, capture_output=True, text=True,
+            encoding="utf-8", timeout=timeout,
+        )
+    except subprocess.TimeoutExpired:
+        print(f"[IA] claude -p excedeu {timeout}s.")
+        return None
+    if proc.returncode != 0:
+        print(f"[IA] claude -p retornou erro {proc.returncode}: {proc.stderr[:300]}")
+        return None
+    # Envelope do Claude Code: {"type":"result","result":"<texto>", ...}
+    try:
+        texto = json.loads(proc.stdout).get("result", proc.stdout)
+    except json.JSONDecodeError:
+        texto = proc.stdout
+    try:
+        return json.loads(_strip_fences(texto))
+    except json.JSONDecodeError as e:
+        print(f"[IA] resposta nao era JSON valido ({e}).")
+        return None
 
+
+def generate_insights(metrics: dict, normalized: dict, comments: dict | None = None,
+                      timeout: int = 240) -> dict | None:
     contexto = _build_context(metrics, normalized, comments)
     extra = _load_extra_context()
     bloco_extra = (
@@ -164,35 +189,65 @@ def generate_insights(metrics: dict, normalized: dict, comments: dict | None = N
         + json.dumps(contexto, ensure_ascii=False)
         + "\n\nResponda APENAS com o JSON de insights."
     )
-
-    try:
-        proc = subprocess.run(
-            [claude, "-p", "--output-format", "json"],
-            input=prompt,
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            timeout=timeout,
-        )
-    except subprocess.TimeoutExpired:
-        print(f"[IA] claude -p excedeu {timeout}s — usando fallback deterministico.")
-        return None
-
-    if proc.returncode != 0:
-        print(f"[IA] claude -p retornou erro {proc.returncode}: {proc.stderr[:300]}")
-        return None
-
-    # Envelope do Claude Code: {"type":"result","result":"<texto>", ...}
-    try:
-        envelope = json.loads(proc.stdout)
-        texto = envelope.get("result", proc.stdout)
-    except json.JSONDecodeError:
-        texto = proc.stdout
-
-    try:
-        insights = json.loads(_strip_fences(texto))
+    result = _call_claude(prompt, timeout)
+    if result is not None:
         print("[IA] insights gerados com sucesso.")
-        return insights
-    except json.JSONDecodeError as e:
-        print(f"[IA] resposta nao era JSON valido ({e}) — usando fallback.")
+    return result
+
+
+SYSTEM_TEAMS = """Você é um analista de operações de TI. Recebe MENSAGENS recentes
+do Microsoft Teams (chats e canais) e a lista de TÍTULOS de demandas já abertas no
+Planner. Sua tarefa: identificar mensagens que representam DEMANDAS de trabalho para
+o time de TI (bugs, solicitações, pedidos, problemas a resolver, ajustes) que possam
+AINDA NÃO ter virado card no Planner.
+
+REGRAS:
+- Agrupe mensagens relacionadas ao MESMO assunto em uma única demanda candidata.
+- IGNORE conversa social, agradecimentos, avisos, combinados de horário, "ok", "bom dia".
+- Para cada candidata, compare com os títulos do Planner e diga se já parece rastreada.
+- Não invente: use apenas o que está nas mensagens. Cite um trecho como evidência.
+- Responda APENAS com JSON válido, sem markdown nem texto fora do JSON.
+
+Formato EXATO:
+{
+  "demandas_teams": [
+    {
+      "assunto": "resumo curto da demanda",
+      "solicitante": "quem pediu (autor)",
+      "origem": "container (chat/canal)",
+      "evidencia": "trecho representativo da mensagem",
+      "ja_rastreada": "nao" ou "título do card semelhante no Planner",
+      "confianca": "alta|media|baixa",
+      "acao_sugerida": "criar card | vincular a card existente | acompanhar"
+    }
+  ]
+}"""
+
+
+def _build_teams_context(teams_data: dict, normalized: dict) -> dict:
+    msgs = [
+        {"de": m.get("from"), "em": (m.get("created") or "")[:16],
+         "onde": m.get("container"), "texto": m.get("text")}
+        for m in teams_data.get("messages", [])
+    ]
+    titulos_abertos = [d["title"] for d in normalized["demands"] if d["status"] != "concluida"]
+    return {"mensagens_teams": msgs, "titulos_no_planner": titulos_abertos}
+
+
+def classify_teams_demands(teams_data: dict, normalized: dict,
+                           timeout: int = 240) -> dict | None:
+    """Classifica mensagens do Teams em demandas candidatas (dedup vs Planner)."""
+    if not teams_data or not teams_data.get("messages"):
         return None
+    contexto = _build_teams_context(teams_data, normalized)
+    prompt = (
+        SYSTEM_TEAMS
+        + "\n\n=== DADOS (JSON) ===\n"
+        + json.dumps(contexto, ensure_ascii=False)
+        + "\n\nResponda APENAS com o JSON."
+    )
+    result = _call_claude(prompt, timeout)
+    if result is not None:
+        n = len(result.get("demandas_teams", []))
+        print(f"[IA] {n} demanda(s) candidata(s) identificada(s) no Teams.")
+    return result
