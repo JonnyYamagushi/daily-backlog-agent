@@ -1,0 +1,22 @@
+# === Segredos e credenciais (NUNCA versionar) ===
+.env
+context.md
+data/cache/
+*.bin
+
+# === Dados coletados (contêm informações internas do backlog/comentários) ===
+# Ignora TODO o conteúdo de dados; a estrutura é recriada em tempo de execução.
+data/
+reports/
+logs/
+
+# === Python ===
+__pycache__/
+*.pyc
+.venv/
+venv/
+.pytest_cache/
+
+# === Editores ===
+.vscode/
+.idea/

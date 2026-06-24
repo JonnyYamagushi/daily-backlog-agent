@@ -1,0 +1,9 @@
+# Fase 1 — coleta e autenticação
+msal==1.31.1
+requests==2.32.3
+python-dotenv==1.0.1
+
+# (Fases seguintes — deixados comentados por enquanto)
+# pandas==2.2.3
+# jinja2==3.1.4
+# anthropic==0.39.0
